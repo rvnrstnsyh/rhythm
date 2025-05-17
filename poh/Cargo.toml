@@ -1,0 +1,40 @@
+[package]
+name = "poh"
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+blake3.workspace = true
+hex.workspace = true
+lazy_static.workspace = true
+ring.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thread = { version = "0.1.0", path = "../thread" }
+
+[dev-dependencies]
+criterion.workspace = true
+
+[lints]
+workspace = true
+
+[[test]]
+name = "operations"
+path = "test/operations.rs"
+harness = true
+
+[[test]]
+name = "hash"
+path = "test/hash.rs"
+harness = true
+
+[[bench]]
+name = "operations"
+path = "bench/operations.rs"
+harness = false
