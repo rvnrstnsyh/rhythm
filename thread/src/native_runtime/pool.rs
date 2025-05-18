@@ -4,11 +4,11 @@ use std::{
         Arc, Condvar, Mutex, MutexGuard,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
-    thread as std_thread,
+    thread,
     time::{Duration, Instant},
 };
 
-use crate::native::types::{Config, Job, JobFn, JobOption, JobQueue, JoinHandle, Manager, ThreadPool, ThreadPoolStats};
+use crate::native_runtime::types::{Config, Job, JobFn, JobOption, JobQueue, JoinHandle, Native, ThreadPool, ThreadPoolStats};
 
 use anyhow::{Result, bail};
 
@@ -17,7 +17,7 @@ impl ThreadPool {
         // Validate configuration.
         config.validate()?;
 
-        let manager: Manager = Manager::new(name, config.clone())?;
+        let worker: Native = Native::new(name, config.clone())?;
         let job_queue: JobQueue = Arc::new(Mutex::new(VecDeque::with_capacity(32))); // Pre-allocate some capacity.
         let signal: Arc<Condvar> = Arc::new(Condvar::new());
         let shutdown: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
@@ -29,8 +29,8 @@ impl ThreadPool {
 
         // Create worker threads.
         for id in 0..config.max_threads {
-            let worker = Self::spawn_worker(
-                &manager,
+            workers.push(Self::spawn_worker(
+                &worker,
                 id,
                 job_queue.clone(),
                 signal.clone(),
@@ -38,12 +38,11 @@ impl ThreadPool {
                 active_workers.clone(),
                 completed_jobs.clone(),
                 stats.clone(),
-            )?;
-            workers.push(worker);
+            )?);
         }
 
         return Ok(Self {
-            manager,
+            worker,
             job_queue,
             signal,
             shutdown,
@@ -55,7 +54,7 @@ impl ThreadPool {
     }
 
     fn spawn_worker(
-        manager: &Manager,
+        worker: &Native,
         id: usize,
         job_queue: Arc<Mutex<VecDeque<Job>>>,
         signal: Arc<Condvar>,
@@ -66,7 +65,7 @@ impl ThreadPool {
     ) -> Result<JoinHandle<()>> {
         let worker_name: String = format!("worker-{}", id);
 
-        manager.spawn_named(worker_name, move || {
+        worker.spawn_named(worker_name, move || {
             let mut consecutive_idle: i32 = 0;
 
             while !shutdown.load(Ordering::Acquire) {
@@ -222,10 +221,12 @@ impl ThreadPool {
         self.execute(move || {
             let job_result: std::result::Result<R, anyhow::Error> = f();
             let mut slot: MutexGuard<'_, Option<std::result::Result<R, anyhow::Error>>> = result_clone.lock().unwrap();
+
             *slot = Some(job_result);
             done_flag_clone.store(true, Ordering::Release);
             done_signal_clone.notify_all(); // Notify all in case multiple threads are waiting.
-            Ok(())
+
+            return Ok(());
         })?;
 
         // Wait for the job to complete.
@@ -276,7 +277,7 @@ impl ThreadPool {
         let mut worker_panics: usize = 0;
 
         for worker in self.workers.drain(..) {
-            let worker_name = worker.name().to_string();
+            let worker_name: String = worker.name().to_string();
             if let Err(e) = worker.join() {
                 worker_panics = worker_panics.saturating_add(1);
                 eprintln!("Worker thread '{}' panicked during shutdown: {:?}.", worker_name, e);
@@ -289,7 +290,7 @@ impl ThreadPool {
         }
 
         // Return the final stats.
-        let stats = self.stats.lock().unwrap().clone();
+        let stats: ThreadPoolStats = self.stats.lock().unwrap().clone();
         return Ok(stats);
     }
 
@@ -323,9 +324,9 @@ impl ThreadPool {
         return self.shutdown.load(Ordering::Acquire);
     }
 
-    /// Get a reference to the underlying thread manager.
-    pub fn thread_manager(&self) -> &Manager {
-        return &self.manager;
+    /// Get a reference to the underlying thread native.
+    pub fn thread_native(&self) -> &Native {
+        return &self.worker;
     }
 
     /// Wait for all currently queued jobs to complete.
@@ -335,12 +336,12 @@ impl ThreadPool {
         }
         // Keep checking until queue is empty and no active workers.
         while self.queued_job_count() > 0 || self.active_worker_count() > 0 {
-            std_thread::sleep(Duration::from_millis(10));
+            thread::sleep(Duration::from_millis(10));
         }
         return Ok(());
     }
-}
 
-pub fn default_pool(name: &str) -> Result<ThreadPool> {
-    return ThreadPool::new(name.to_string(), Config::default());
+    pub fn default_pool(name: &str) -> Result<ThreadPool> {
+        return ThreadPool::new(name.to_string(), Config::default());
+    }
 }

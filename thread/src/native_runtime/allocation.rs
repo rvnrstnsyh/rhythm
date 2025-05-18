@@ -1,4 +1,4 @@
-use crate::native::types::CoreAllocation;
+use crate::native_runtime::types::CoreAllocation;
 
 use anyhow::{Result, bail};
 

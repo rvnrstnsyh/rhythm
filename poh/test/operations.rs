@@ -5,9 +5,9 @@ mod poh_operations {
         time::{Duration, Instant},
     };
 
-    use ::thread::native::types::{Config, JoinHandle, Manager};
-
     use poh::types::{PoH, Record};
+
+    use thread::native_runtime::types::{Config, JoinHandle, Native};
 
     use lib::{
         digest,
@@ -214,8 +214,8 @@ mod poh_operations {
 
         let (tx, rx) = sync_channel(DEFAULT_CHANNEL_CAPACITY);
         let seed_vec: Vec<u8> = seed.to_vec();
-        let manager: Manager = Manager::new("poh-test-thread".to_string(), Config::default()).expect("Failed to create thread manager.");
-        let _: JoinHandle<()> = manager
+        let worker: Native = Native::new("poh-test-thread".to_string(), Config::default()).expect("Failed to create thread worker.");
+        let _: JoinHandle<()> = worker
             .spawn(move || {
                 let mut poh: PoH = PoH::new(&seed_vec);
                 let mut records_batch: Vec<Record> = Vec::with_capacity(DEFAULT_BATCH_SIZE);

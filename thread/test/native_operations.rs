@@ -11,45 +11,44 @@ mod thread_native_operations {
     };
 
     use anyhow::Result;
-    use thread::native::types::{Config, CoreAllocation, JoinHandle, Manager, ThreadPool, ThreadPoolStats};
-    use thread::native::{manager::default_manager, pool::default_pool};
+    use thread::native_runtime::types::{Config, CoreAllocation, JoinHandle, Native, ThreadPool, ThreadPoolStats};
 
     #[test]
-    fn thread_manager_basic() -> Result<()> {
-        let manager: Manager = default_manager("test-manager")?;
+    fn thread_worker_basic() -> Result<()> {
+        let worker: Native = Native::default_thread("test-worker")?;
 
-        assert_eq!(manager.name(), "test-manager");
-        assert_eq!(manager.running_count(), 0);
-        assert!(!manager.is_full());
+        assert_eq!(worker.name(), "test-worker");
+        assert_eq!(worker.running_count(), 0);
+        assert!(!worker.is_full());
 
         let counter: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
         let counter_clone: Arc<AtomicUsize> = counter.clone();
-        let handle: JoinHandle<&'static str> = manager.spawn(move || {
+        let handle: JoinHandle<&'static str> = worker.spawn(move || {
             counter_clone.fetch_add(1, Ordering::SeqCst);
             std_thread::sleep(Duration::from_millis(50));
             counter_clone.fetch_add(1, Ordering::SeqCst);
             "test result"
         })?;
 
-        assert_eq!(manager.running_count(), 1);
+        assert_eq!(worker.running_count(), 1);
 
         // Wait for thread to complete.
         let result: &'static str = handle.join().unwrap();
         assert_eq!(result, "test result");
         assert_eq!(counter.load(Ordering::SeqCst), 2);
-        assert_eq!(manager.running_count(), 0);
+        assert_eq!(worker.running_count(), 0);
 
         return Ok(());
     }
 
     #[test]
-    fn thread_manager_named() -> Result<()> {
-        let manager: Manager = default_manager("test-manager")?;
+    fn thread_worker_named() -> Result<()> {
+        let worker: Native = Native::default_thread("test-worker")?;
 
         let shared_data: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let shared_data_clone: Arc<Mutex<Vec<String>>> = shared_data.clone();
 
-        let handle: JoinHandle<&'static str> = manager.spawn_named("custom-worker".to_string(), move || {
+        let handle: JoinHandle<&'static str> = worker.spawn_named("custom-worker".to_string(), move || {
             let thread_name: String = std_thread::current().name().unwrap_or("unknown").to_string();
             let mut data: MutexGuard<'_, Vec<String>> = shared_data_clone.lock().unwrap();
             data.push(thread_name);
@@ -67,26 +66,26 @@ mod thread_native_operations {
     }
 
     #[test]
-    fn thread_manager_max_threads() -> Result<()> {
+    fn thread_worker_max_threads() -> Result<()> {
         let config: Config = Config {
             max_threads: 2,
             ..Default::default()
         };
-        let manager: Manager = Manager::new("limited-manager".to_string(), config)?;
-        let handle1: JoinHandle<i32> = manager.spawn(|| {
+        let worker: Native = Native::new("limited-worker".to_string(), config)?;
+        let handle1: JoinHandle<i32> = worker.spawn(|| {
             std_thread::sleep(Duration::from_millis(50));
             1
         })?;
-        let handle2: JoinHandle<i32> = manager.spawn(|| {
+        let handle2: JoinHandle<i32> = worker.spawn(|| {
             std_thread::sleep(Duration::from_millis(50));
             2
         })?;
 
-        assert_eq!(manager.running_count(), 2);
-        assert!(manager.is_full());
+        assert_eq!(worker.running_count(), 2);
+        assert!(worker.is_full());
 
         // Try to spawn a third thread - should fail.
-        let result: Result<JoinHandle<i32>, anyhow::Error> = manager.spawn(|| {
+        let result: Result<JoinHandle<i32>, anyhow::Error> = worker.spawn(|| {
             std_thread::sleep(Duration::from_millis(50));
             3
         });
@@ -95,9 +94,9 @@ mod thread_native_operations {
         // Join threads.
         assert_eq!(handle1.join().unwrap(), 1);
         assert_eq!(handle2.join().unwrap(), 2);
-        assert_eq!(manager.running_count(), 0);
+        assert_eq!(worker.running_count(), 0);
 
-        assert!(!manager.is_full());
+        assert!(!worker.is_full());
 
         return Ok(());
     }
@@ -132,7 +131,7 @@ mod thread_native_operations {
 
     #[test]
     fn thread_pool_basic() -> Result<()> {
-        let pool: ThreadPool = default_pool("test-pool")?;
+        let pool: ThreadPool = ThreadPool::default_pool("test-pool")?;
         let counter: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
         let counter_clone: Arc<AtomicUsize> = counter.clone();
 
@@ -159,7 +158,7 @@ mod thread_native_operations {
 
     #[test]
     fn thread_pool_execute_wait() -> Result<()> {
-        let pool: ThreadPool = default_pool("test-pool")?;
+        let pool: ThreadPool = ThreadPool::default_pool("test-pool")?;
         let result: i32 = pool.execute_wait(|| {
             std_thread::sleep(Duration::from_millis(50));
             return Ok(42);
@@ -183,7 +182,7 @@ mod thread_native_operations {
 
     #[test]
     fn thread_pool_execute_batch() -> Result<()> {
-        let pool: ThreadPool = default_pool("batch-pool")?;
+        let pool: ThreadPool = ThreadPool::default_pool("batch-pool")?;
         let counter: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
         let jobs = (0..10)
             .map(|_| {
@@ -217,7 +216,7 @@ mod thread_native_operations {
 
     #[test]
     fn thread_pool_shutdown() -> Result<()> {
-        let mut pool: ThreadPool = default_pool("shutdown-pool")?;
+        let mut pool: ThreadPool = ThreadPool::default_pool("shutdown-pool")?;
 
         // Add a job that takes some time.
         pool.execute(|| {
@@ -244,7 +243,7 @@ mod thread_native_operations {
 
     #[test]
     fn thread_pool_stats() -> Result<()> {
-        let pool: ThreadPool = default_pool("stats-pool")?;
+        let pool: ThreadPool = ThreadPool::default_pool("stats-pool")?;
 
         // Execute multiple jobs with different sleep durations.
         for i in 0..5 {
@@ -313,9 +312,9 @@ mod thread_native_operations {
     }
 
     #[test]
-    fn thread_manager_panic_handling() -> Result<()> {
-        let manager: Manager = default_manager("panic-test")?;
-        let handle: Result<JoinHandle<&'static str>, anyhow::Error> = manager.spawn(|| {
+    fn thread_worker_panic_handling() -> Result<()> {
+        let worker: Native = Native::default_thread("panic-test")?;
+        let handle: Result<JoinHandle<&'static str>, anyhow::Error> = worker.spawn(|| {
             if true {
                 panic!("Test panic");
             }
@@ -329,10 +328,10 @@ mod thread_native_operations {
 
         assert!(result.is_err());
 
-        // Ensure manager is still usable after a thread panic.
+        // Ensure worker is still usable after a thread panic.
         let counter: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
         let counter_clone: Arc<AtomicUsize> = counter.clone();
-        let handle: JoinHandle<&'static str> = manager.spawn(move || {
+        let handle: JoinHandle<&'static str> = worker.spawn(move || {
             counter_clone.fetch_add(1, Ordering::SeqCst);
             "success after panic"
         })?;
@@ -346,7 +345,7 @@ mod thread_native_operations {
 
     #[test]
     fn thread_pool_concurrent_stress() -> Result<()> {
-        let pool: ThreadPool = default_pool("stress-pool")?;
+        let pool: ThreadPool = ThreadPool::default_pool("stress-pool")?;
         let counter: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
         let total_jobs: usize = 100;
 

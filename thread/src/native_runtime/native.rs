@@ -3,17 +3,19 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
-    thread as std_thread,
+    thread,
 };
 
-use crate::native::policy::apply_policy;
-use crate::native::types::{Config, CoreAllocation, JoinHandle, Manager, ManagerInner};
+use crate::native_runtime::{
+    policy::apply_policy,
+    types::{Config, CoreAllocation, JoinHandle, Native, NativeInner},
+};
 
 use anyhow::{Context, Result, bail};
 
 pub const MAX_THREAD_NAME_CHARS: usize = 32;
 
-impl Manager {
+impl Native {
     pub fn new(name: String, config: Config) -> Result<Self> {
         if name.len() >= MAX_THREAD_NAME_CHARS {
             bail!("Thread name too long (max {} chars).", MAX_THREAD_NAME_CHARS);
@@ -25,7 +27,7 @@ impl Manager {
         let cores_mask: Vec<usize> = config.core_allocation.as_core_mask_vector();
 
         return Ok(Self {
-            inner: Arc::new(ManagerInner {
+            inner: Arc::new(NativeInner {
                 id_count: AtomicUsize::new(0),
                 running_count: Arc::new(AtomicUsize::new(0)),
                 cores_mask: Mutex::new(cores_mask),
@@ -43,7 +45,7 @@ impl Manager {
     {
         let n: usize = self.inner.id_count.fetch_add(1, Ordering::Relaxed);
         let name: String = format!("{}-{}", &self.inner.name, n);
-        self.spawn_named(name, f)
+        return self.spawn_named(name, f);
     }
 
     pub fn spawn_named<F, T>(&self, name: String, f: F) -> Result<JoinHandle<T>>
@@ -57,13 +59,13 @@ impl Manager {
         }
 
         let spawned: usize = self.inner.running_count.load(Ordering::Acquire);
+
         if spawned >= self.inner.config.max_threads {
             bail!("All allowed threads in this pool are already spawned (max: {}).", self.inner.config.max_threads);
         }
 
         let core_alloc: CoreAllocation = self.inner.config.core_allocation.clone();
         let priority: u8 = self.inner.config.priority;
-
         // Get a reference to the core mask - minimize lock holding time.
         let chosen_cores_mask: Vec<usize> = {
             let cores: std::sync::MutexGuard<'_, Vec<usize>> = self.inner.cores_mask.lock().unwrap();
@@ -72,9 +74,8 @@ impl Manager {
 
         // Clone necessary data for the thread.
         let running_count: Arc<AtomicUsize> = self.inner.running_count.clone();
-
         let thread_name: String = name.clone();
-        let jh: std_thread::JoinHandle<T> = std_thread::Builder::new()
+        let jh: thread::JoinHandle<T> = thread::Builder::new()
             .name(name.clone())
             .stack_size(self.inner.config.stack_size_bytes)
             .spawn(move || {
@@ -106,12 +107,12 @@ impl Manager {
         return self.running_count() >= self.inner.config.max_threads;
     }
 
-    /// Get a reference to the thread manager's configuration.
+    /// Get a reference to the thread native's configuration.
     pub fn config(&self) -> &Config {
         return &self.inner.config;
     }
 
-    /// Get the thread manager's name.
+    /// Get the thread native's name.
     pub fn name(&self) -> &str {
         return &self.inner.name;
     }
@@ -120,8 +121,8 @@ impl Manager {
     pub fn available_slots(&self) -> usize {
         return self.inner.config.max_threads.saturating_sub(self.running_count());
     }
-}
 
-pub fn default_manager(name: &str) -> Result<Manager> {
-    return Manager::new(name.to_string(), Config::default());
+    pub fn default_thread(name: &str) -> Result<Native> {
+        return Native::new(name.to_string(), Config::default());
+    }
 }

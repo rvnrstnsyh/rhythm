@@ -1,9 +1,9 @@
-use std::{any::Any, sync::atomic::Ordering, thread as std_thread};
+use std::{any::Any, sync::atomic::Ordering, thread};
 
-use crate::native::types::JoinHandle;
+use crate::native_runtime::types::JoinHandle;
 
 impl<T> JoinHandle<T> {
-    fn join_inner(&mut self) -> std_thread::Result<T> {
+    fn join_inner(&mut self) -> thread::Result<T> {
         return match self.std_handle.take() {
             Some(jh) => {
                 let result: Result<T, Box<dyn Any + Send + 'static>> = jh.join();
@@ -21,7 +21,7 @@ impl<T> JoinHandle<T> {
     /// # Returns
     /// Returns `Ok(T)` if the thread completed successfully, or
     /// `Err(Box<dyn Any + Send>)` if the thread panicked.
-    pub fn join(mut self) -> std_thread::Result<T> {
+    pub fn join(mut self) -> thread::Result<T> {
         return self.join_inner();
     }
 
