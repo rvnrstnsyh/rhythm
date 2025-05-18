@@ -1,0 +1,21 @@
+[package]
+name = "lib"
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+blake3.workspace = true
+ring.workspace = true
+
+[lints]
+workspace = true
+
+[[test]]
+name = "digest"
+path = "test/digest.rs"
+harness = true

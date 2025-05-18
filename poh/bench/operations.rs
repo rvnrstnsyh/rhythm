@@ -3,7 +3,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use poh::{DEFAULT_HASHES_PER_REV, DEFAULT_US_PER_REV, PoH, PoHRecord, digest};
+use poh::types::{PoH, Record};
+
+use lib::{
+    digest,
+    metronome::{DEFAULT_HASHES_PER_REV, DEFAULT_US_PER_REV},
+};
 
 use criterion::{BenchmarkGroup, BenchmarkId, Criterion, criterion_group, criterion_main};
 
@@ -100,10 +105,10 @@ fn poh_generation(c: &mut Criterion) {
             b.iter(|| {
                 let seed: [u8; 64] = [b'0'; 64];
                 let mut poh: PoH = PoH::new(&seed);
-                let mut records: Vec<PoHRecord> = Vec::with_capacity(rev_count as usize);
+                let mut records: Vec<Record> = Vec::with_capacity(rev_count as usize);
 
                 for i in 0..rev_count {
-                    let record: PoHRecord = if i % 10 == 0 {
+                    let record: Record = if i % 10 == 0 {
                         // Every 10th rev, insert an event.
                         let event_data = format!("Event at rev {}", i);
                         poh.insert_event(event_data.as_bytes())
@@ -176,7 +181,7 @@ fn realtime_performance(c: &mut Criterion) {
                 let start: Instant = Instant::now();
                 // Generate a rev with precise timing.
                 let next_rev_target_us = DEFAULT_US_PER_REV;
-                let record: PoHRecord = poh.next_rev();
+                let record: Record = poh.next_rev();
                 // Simulate waiting for next rev.
                 let elapsed_us: u64 = start.elapsed().as_micros() as u64;
 

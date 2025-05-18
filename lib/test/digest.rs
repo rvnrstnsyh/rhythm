@@ -1,8 +1,8 @@
 #[cfg(test)]
-mod poh_hash {
+mod digest_operations {
     use std::time::{Duration, Instant};
 
-    use poh::digest;
+    use lib::digest;
 
     use blake3::Hasher as Blake3Hasher;
     use ring::digest::{Context, Digest, SHA256};

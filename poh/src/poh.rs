@@ -1,33 +1,14 @@
 use std::{
-    fmt::{Display, Formatter, Result},
     thread as std_thread,
     time::{Duration, Instant},
 };
 
-use crate::{
-    DEFAULT_HASHES_PER_REV, DEFAULT_PHASES_PER_CYCLE, DEFAULT_REVS_PER_PHASE, DEFAULT_SPINLOCK_THRESHOLD_US, DEFAULT_US_PER_REV, digest,
-    types::{PoH, PoHRecord},
+use crate::types::{PoH, Record};
+
+use lib::{
+    digest,
+    metronome::{DEFAULT_HASHES_PER_REV, DEFAULT_PHASES_PER_CYCLE, DEFAULT_REVS_PER_PHASE, DEFAULT_SPINLOCK_THRESHOLD_US, DEFAULT_US_PER_REV},
 };
-
-use hex::encode;
-
-impl Display for PoHRecord {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        let _event_desc: String = match &self.event {
-            Some(data) => format!("Event: {} bytes", data.len()),
-            None => "No Event".to_string(),
-        };
-        return write!(
-            f,
-            "Cycle {}, Phase {}, Rev {}, Timestamp {}ms, Hash 0x{}...",
-            self.cycle_index,
-            self.phase_index,
-            self.rev_index,
-            self.timestamp_ms,
-            &encode(self.hash)[..17]
-        );
-    }
-}
 
 impl PoH {
     pub fn new(seed: &[u8]) -> Self {
@@ -42,22 +23,22 @@ impl PoH {
         };
     }
 
-    pub fn next_rev(&mut self) -> PoHRecord {
+    pub fn next_rev(&mut self) -> Record {
         return self.core(None);
     }
 
-    pub fn insert_event(&mut self, event_data: &[u8]) -> PoHRecord {
+    pub fn insert_event(&mut self, event_data: &[u8]) -> Record {
         return self.core(Some(event_data));
     }
 
-    pub fn verify_records(records: &[PoHRecord]) -> bool {
+    pub fn verify_records(records: &[Record]) -> bool {
         if records.is_empty() {
             return false;
         }
 
         for window in records.windows(2) {
-            let prev: &PoHRecord = &window[0];
-            let curr: &PoHRecord = &window[1];
+            let prev: &Record = &window[0];
+            let curr: &Record = &window[1];
             let event_data: Option<&[u8]> = curr.event.as_deref();
 
             if !digest::verify_hash_chain(&prev.hash, &curr.hash, DEFAULT_HASHES_PER_REV, event_data) {
@@ -76,7 +57,7 @@ impl PoH {
         return true;
     }
 
-    pub fn verify_timestamps(records: &[PoHRecord], log_failures: bool) -> bool {
+    pub fn verify_timestamps(records: &[Record], log_failures: bool) -> bool {
         if records.is_empty() {
             return false;
         }
@@ -116,7 +97,7 @@ impl PoH {
         return true;
     }
 
-    fn core(&mut self, event_data: Option<&[u8]>) -> PoHRecord {
+    fn core(&mut self, event_data: Option<&[u8]>) -> Record {
         // Control timing.
         self.enforce_timing();
 
@@ -129,7 +110,7 @@ impl PoH {
         let rev_index: u64 = self.rev_count;
         let phase_index: u64 = rev_index / DEFAULT_REVS_PER_PHASE;
         let cycle_index: u64 = phase_index / DEFAULT_PHASES_PER_CYCLE;
-        let record: PoHRecord = PoHRecord {
+        let record: Record = Record {
             hash: self.current_hash,
             rev_index,
             phase_index,

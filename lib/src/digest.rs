@@ -1,4 +1,4 @@
-use crate::DEFAULT_HASH;
+use crate::metronome::DEFAULT_HASH;
 
 use blake3::Hasher as Blake3Hasher;
 use ring::digest::{Context as RingContext, Digest, SHA256, digest};
@@ -19,14 +19,14 @@ pub fn hash(data: &[u8]) -> [u8; 32] {
     match get_hash_algorithm() {
         1 => {
             // BLAKE3.
-            *blake3::hash(data).as_bytes()
+            return *blake3::hash(data).as_bytes();
         }
         _ => {
             // SHA-256 (default).
             let hash_result: Digest = digest(&SHA256, data);
             let mut hash_bytes: [u8; 32] = [0u8; 32];
             hash_bytes.copy_from_slice(hash_result.as_ref());
-            hash_bytes
+            return hash_bytes;
         }
     }
 }
@@ -39,7 +39,7 @@ pub fn hash_with_data(prev_hash: &[u8; 32], data: &[u8]) -> [u8; 32] {
             let mut hasher: Blake3Hasher = Blake3Hasher::new();
             hasher.update(prev_hash);
             hasher.update(data);
-            *hasher.finalize().as_bytes()
+            return *hasher.finalize().as_bytes();
         }
         _ => {
             // SHA-256 (default).
@@ -49,7 +49,7 @@ pub fn hash_with_data(prev_hash: &[u8; 32], data: &[u8]) -> [u8; 32] {
             let result: Digest = context.finish();
             let mut hash_bytes: [u8; 32] = [0u8; 32];
             hash_bytes.copy_from_slice(result.as_ref());
-            hash_bytes
+            return hash_bytes;
         }
     }
 }
@@ -93,7 +93,7 @@ fn hash_single(input: &[u8; 32]) -> [u8; 32] {
             // BLAKE3.
             let mut hasher: Blake3Hasher = Blake3Hasher::new();
             hasher.update(input);
-            *hasher.finalize().as_bytes()
+            return *hasher.finalize().as_bytes();
         }
         _ => {
             // SHA-256 (default).
@@ -102,7 +102,7 @@ fn hash_single(input: &[u8; 32]) -> [u8; 32] {
             let result: Digest = context.finish();
             let mut hash_bytes: [u8; 32] = [0u8; 32];
             hash_bytes.copy_from_slice(result.as_ref());
-            hash_bytes
+            return hash_bytes;
         }
     }
 }
@@ -150,8 +150,8 @@ pub fn get_current_algorithm() -> u8 {
 }
 
 pub fn get_algorithm_name() -> &'static str {
-    match get_hash_algorithm() {
+    return match get_hash_algorithm() {
         1 => "BLAKE3",
         _ => "SHA-256",
-    }
+    };
 }
