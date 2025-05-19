@@ -16,6 +16,11 @@ ring.workspace = true
 workspace = true
 
 [[test]]
+name = "metronome"
+path = "test/metronome.rs"
+harness = true
+
+[[test]]
 name = "digest"
 path = "test/digest.rs"
 harness = true

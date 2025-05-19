@@ -11,7 +11,7 @@ pub const DEFAULT_MS_PER_REV: u64 = 1_000 / DEFAULT_REVS_PER_SECOND;
 // Additional timing tolerance per rev in microseconds (0.25ms).
 pub const DEFAULT_US_TOLERANCE_PER_REV: u64 = 250;
 // Final rev duration in microseconds: ~6ms + 0.25ms = 6250μs.
-pub const DEFAULT_US_PER_REV: u64 = (DEFAULT_MS_PER_REV * 1000) + DEFAULT_US_TOLERANCE_PER_REV;
+pub const DEFAULT_US_PER_REV: u64 = (DEFAULT_MS_PER_REV * 1_000) + DEFAULT_US_TOLERANCE_PER_REV;
 // Number of revs per phase (64 revs = 1 phase).
 pub const DEFAULT_REVS_PER_PHASE: u64 = 64;
 // GCP n1-standard hardware and also a xeon e5-2520 v4 are about this rate of hashes/s.
