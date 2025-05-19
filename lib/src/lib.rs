@@ -1,2 +1,2 @@
-pub mod digest;
+pub mod hash;
 pub mod metronome;

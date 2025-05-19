@@ -10,7 +10,7 @@ mod poh_operations {
     use thread::native_runtime::types::{Config, JoinHandle, Native};
 
     use lib::{
-        digest,
+        hash::Hasher,
         metronome::{DEFAULT_BATCH_SIZE, DEFAULT_CHANNEL_CAPACITY, DEFAULT_HASHES_PER_REV, DEFAULT_PHASES_PER_CYCLE, DEFAULT_REVS_PER_PHASE, DEFAULT_US_PER_REV},
     };
 
@@ -34,15 +34,16 @@ mod poh_operations {
 
     #[test]
     fn hash_chain_extension() {
+        let hasher: Hasher = Hasher::default();
         let seed: [u8; 32] = [1u8; 32]; // Some seed data.
         let iterations: u64 = 10;
         // Test hash chain extension.
-        let result: [u8; 32] = digest::extend_hash_chain(&seed, iterations);
+        let result: [u8; 32] = hasher.extend_hash_chain(&seed, iterations);
         // Verify by manually applying hash iterations.
         let mut expected: [u8; 32] = seed;
 
         for _ in 0..iterations {
-            expected = digest::hash(&expected);
+            expected = hasher.hash(&expected);
         }
 
         assert_eq!(result, expected, "Hash chain extension produced incorrect result.");
@@ -50,16 +51,17 @@ mod poh_operations {
 
     #[test]
     fn hash_chain_verification() {
+        let hasher: Hasher = Hasher::default();
         let seed: [u8; 32] = [1u8; 32]; // Initial hash.
         let iterations: u64 = DEFAULT_HASHES_PER_REV;
         let event_data: &'static [u8; 10] = b"Test event";
         // Create a valid hash chain with event.
-        let mut current_hash: [u8; 32] = digest::hash_with_data(&seed, event_data);
+        let mut current_hash: [u8; 32] = hasher.embed_data(&seed, event_data);
 
-        current_hash = digest::extend_hash_chain(&current_hash, iterations);
+        current_hash = hasher.extend_hash_chain(&current_hash, iterations);
         // Verify the valid hash chain.
         assert!(
-            digest::verify_hash_chain(&seed, &current_hash, iterations, Some(event_data)),
+            hasher.verify_hash_chain(&seed, &current_hash, iterations, Some(event_data)),
             "Valid hash chain verification failed."
         );
 
@@ -68,7 +70,7 @@ mod poh_operations {
         bad_hash[0] ^= 0xFF; // Corrupt the hash.
 
         assert!(
-            !digest::verify_hash_chain(&seed, &bad_hash, iterations, Some(event_data)),
+            !hasher.verify_hash_chain(&seed, &bad_hash, iterations, Some(event_data)),
             "Corrupted hash chain verification didn't fail."
         );
     }
@@ -188,6 +190,7 @@ mod poh_operations {
 
     #[test]
     fn constant_time_eq() {
+        let hasher: Hasher = Hasher::default();
         // Can't test the actual constant-time property, but can test correctness.
         let hash1: [u8; 32] = [0u8; 32];
         let hash2: [u8; 32] = [0u8; 32];
@@ -198,8 +201,8 @@ mod poh_operations {
         };
 
         // Test the function through verify_hash_chain which uses constant_time_eq.
-        assert!(digest::verify_hash_chain(&hash1, &hash2, 0, None), "Equal hashes not recognized as equal.");
-        assert!(!digest::verify_hash_chain(&hash1, &hash3, 0, None), "Different hashes not recognized as different.");
+        assert!(hasher.verify_hash_chain(&hash1, &hash2, 0, None), "Equal hashes not recognized as equal.");
+        assert!(!hasher.verify_hash_chain(&hash1, &hash3, 0, None), "Different hashes not recognized as different.");
     }
 
     #[test]

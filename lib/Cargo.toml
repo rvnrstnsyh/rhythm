@@ -21,6 +21,6 @@ path = "test/metronome.rs"
 harness = true
 
 [[test]]
-name = "digest"
-path = "test/digest.rs"
+name = "hash"
+path = "test/hash.rs"
 harness = true
