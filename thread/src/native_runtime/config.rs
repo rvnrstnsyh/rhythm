@@ -1,6 +1,6 @@
-use std::thread as std_thread;
+use std::thread;
 
-use crate::native::types::{Config, CoreAllocation};
+use crate::native_runtime::types::{Config, CoreAllocation};
 
 use anyhow::{Result, bail};
 
@@ -8,7 +8,7 @@ impl Default for Config {
     fn default() -> Self {
         return Self {
             core_allocation: CoreAllocation::OsDefault,
-            max_threads: std_thread::available_parallelism().map_or(16, |p| p.get()),
+            max_threads: thread::available_parallelism().map_or(16, |p| p.get()),
             priority: 0,
             stack_size_bytes: 2 * 1024 * 1024, // 2 MB.
         };

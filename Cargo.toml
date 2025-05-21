@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["poh", "protocol", "thread"]
+members = [ "lib","poh", "protocol", "thread"]
 
 [workspace.package]
 authors = ["Rivane Rasetiansyah <re@nvll.me>"]

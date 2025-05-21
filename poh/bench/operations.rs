@@ -3,31 +3,37 @@ use std::{
     time::{Duration, Instant},
 };
 
-use poh::{DEFAULT_HASHES_PER_REV, DEFAULT_US_PER_REV, PoH, PoHRecord, digest};
+use poh::types::{PoH, Record};
+
+use lib::{
+    hash::{Algorithm, Hasher},
+    metronome::{DEFAULT_HASHES_PER_REV, DEFAULT_US_PER_REV},
+};
 
 use criterion::{BenchmarkGroup, BenchmarkId, Criterion, criterion_group, criterion_main};
 
 fn hash_operations(c: &mut Criterion) {
     let mut group: BenchmarkGroup<'_, criterion::measurement::WallTime> = c.benchmark_group("Hash Operations");
+    let hasher: Hasher = Hasher::default();
 
     group.warm_up_time(Duration::from_millis(500));
     group.measurement_time(Duration::from_secs(2));
     // Benchmark single hash operation.
     group.bench_function("single_hash", |b| {
         let data: [u8; 64] = [0u8; 64];
-        b.iter(|| digest::hash(black_box(&data)))
+        b.iter(|| hasher.hash(black_box(&data)))
     });
     // Benchmark hash with data (event insertion).
-    group.bench_function("hash_with_data", |b| {
+    group.bench_function("embed_data", |b| {
         let prev_hash: [u8; 32] = [1u8; 32];
         let data: &'static [u8; 38] = b"This is an event data for benchmarking";
-        b.iter(|| digest::hash_with_data(black_box(&prev_hash), black_box(data)))
+        b.iter(|| hasher.embed_data(black_box(&prev_hash), black_box(data)))
     });
     // Benchmark extending hash chain with different iteration counts.
     for iterations in [100, 1000, DEFAULT_HASHES_PER_REV].iter() {
         group.bench_with_input(BenchmarkId::new("extend_hash_chain", iterations), iterations, |b, &iterations| {
             let prev_hash: [u8; 32] = [2u8; 32];
-            b.iter(|| digest::extend_hash_chain(black_box(&prev_hash), black_box(iterations)))
+            b.iter(|| hasher.extend_hash_chain(black_box(&prev_hash), black_box(iterations)))
         });
     }
     group.finish();
@@ -62,24 +68,25 @@ fn poh_core(c: &mut Criterion) {
 // Benchmark verification operations
 fn verification(c: &mut Criterion) {
     let mut group: BenchmarkGroup<'_, criterion::measurement::WallTime> = c.benchmark_group("PoH Verification");
+    let hasher: Hasher = Hasher::default();
 
     group.warm_up_time(Duration::from_millis(500));
     group.measurement_time(Duration::from_secs(3));
     // Benchmark hash chain verification.
     group.bench_function("verify_hash_chain", |b| {
         let prev_hash: [u8; 32] = [3u8; 32];
-        let extended: [u8; 32] = digest::extend_hash_chain(&prev_hash, DEFAULT_HASHES_PER_REV);
-        b.iter(|| digest::verify_hash_chain(black_box(&prev_hash), black_box(&extended), black_box(DEFAULT_HASHES_PER_REV), black_box(None)))
+        let extended: [u8; 32] = hasher.extend_hash_chain(&prev_hash, DEFAULT_HASHES_PER_REV);
+        b.iter(|| hasher.verify_hash_chain(black_box(&prev_hash), black_box(&extended), black_box(DEFAULT_HASHES_PER_REV), black_box(None)))
     });
     // Benchmark hash chain verification with event data.
     group.bench_function("verify_hash_chain_with_event", |b| {
         let prev_hash: [u8; 32] = [4u8; 32];
         let event_data: &'static [u8; 37] = b"Event data for verification benchmark";
-        let mut hash: [u8; 32] = digest::hash_with_data(&prev_hash, event_data);
+        let mut hash: [u8; 32] = hasher.embed_data(&prev_hash, event_data);
 
-        hash = digest::extend_hash_chain(&hash, DEFAULT_HASHES_PER_REV);
+        hash = hasher.extend_hash_chain(&hash, DEFAULT_HASHES_PER_REV);
         b.iter(|| {
-            digest::verify_hash_chain(
+            hasher.verify_hash_chain(
                 black_box(&prev_hash),
                 black_box(&hash),
                 black_box(DEFAULT_HASHES_PER_REV),
@@ -100,10 +107,10 @@ fn poh_generation(c: &mut Criterion) {
             b.iter(|| {
                 let seed: [u8; 64] = [b'0'; 64];
                 let mut poh: PoH = PoH::new(&seed);
-                let mut records: Vec<PoHRecord> = Vec::with_capacity(rev_count as usize);
+                let mut records: Vec<Record> = Vec::with_capacity(rev_count as usize);
 
                 for i in 0..rev_count {
-                    let record: PoHRecord = if i % 10 == 0 {
+                    let record: Record = if i % 10 == 0 {
                         // Every 10th rev, insert an event.
                         let event_data = format!("Event at rev {}", i);
                         poh.insert_event(event_data.as_bytes())
@@ -131,20 +138,20 @@ fn hash_algorithms(c: &mut Criterion) {
     let test_data_large: Vec<u8> = vec![0u8; 1024 * 1024]; // 1MB.
 
     // First benchmark SHA256 (algorithm 0).
-    digest::set_hash_algorithm(0);
+    let mut hasher: Hasher = Hasher::default();
 
     for (name, data) in [
-        ("SHA256_small", &test_data_small),
-        ("SHA256_medium", &test_data_medium),
-        ("SHA256_large", &test_data_large),
+        ("SHA-256_small", &test_data_small),
+        ("SHA-256_medium", &test_data_medium),
+        ("SHA-256_large", &test_data_large),
     ]
     .iter()
     {
-        group.bench_function(*name, |b| b.iter(|| digest::hash(black_box(data))));
+        group.bench_function(*name, |b| b.iter(|| hasher.hash(black_box(data))));
     }
 
     // Then benchmark BLAKE3 (algorithm 1).
-    digest::set_hash_algorithm(1);
+    hasher.set_algorithm(Algorithm::BLAKE3);
 
     for (name, data) in [
         ("BLAKE3_small", &test_data_small),
@@ -153,10 +160,10 @@ fn hash_algorithms(c: &mut Criterion) {
     ]
     .iter()
     {
-        group.bench_function(*name, |b| b.iter(|| digest::hash(black_box(data))));
+        group.bench_function(*name, |b| b.iter(|| hasher.hash(black_box(data))));
     }
     // Reset to default algorithm.
-    digest::set_hash_algorithm(0);
+    hasher.set_algorithm(Algorithm::SHA256);
     group.finish();
 }
 
@@ -176,7 +183,7 @@ fn realtime_performance(c: &mut Criterion) {
                 let start: Instant = Instant::now();
                 // Generate a rev with precise timing.
                 let next_rev_target_us = DEFAULT_US_PER_REV;
-                let record: PoHRecord = poh.next_rev();
+                let record: Record = poh.next_rev();
                 // Simulate waiting for next rev.
                 let elapsed_us: u64 = start.elapsed().as_micros() as u64;
 

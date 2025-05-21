@@ -5,11 +5,13 @@ mod poh_operations {
         time::{Duration, Instant},
     };
 
-    use ::thread::native::types::{Config, JoinHandle, Manager};
+    use poh::types::{PoH, Record};
 
-    use poh::{
-        DEFAULT_BATCH_SIZE, DEFAULT_CHANNEL_CAPACITY, DEFAULT_HASHES_PER_REV, DEFAULT_PHASES_PER_CYCLE, DEFAULT_REVS_PER_PHASE, DEFAULT_US_PER_REV, PoH, PoHRecord,
-        digest,
+    use thread::native_runtime::types::{Config, JoinHandle, Native};
+
+    use lib::{
+        hash::Hasher,
+        metronome::{DEFAULT_BATCH_SIZE, DEFAULT_CHANNEL_CAPACITY, DEFAULT_HASHES_PER_REV, DEFAULT_PHASES_PER_CYCLE, DEFAULT_REVS_PER_PHASE, DEFAULT_US_PER_REV},
     };
 
     #[test]
@@ -17,8 +19,8 @@ mod poh_operations {
         let seed: [u8; 64] = [b'0'; 64];
         let mut poh: PoH = PoH::new(&seed);
 
-        let record1: PoHRecord = poh.next_rev();
-        let record2: PoHRecord = poh.next_rev();
+        let record1: Record = poh.next_rev();
+        let record2: Record = poh.next_rev();
 
         // Ensure records have consecutive rev indices.
         assert_eq!(record1.rev_index + 1, record2.rev_index);
@@ -32,15 +34,16 @@ mod poh_operations {
 
     #[test]
     fn hash_chain_extension() {
+        let hasher: Hasher = Hasher::default();
         let seed: [u8; 32] = [1u8; 32]; // Some seed data.
         let iterations: u64 = 10;
         // Test hash chain extension.
-        let result: [u8; 32] = digest::extend_hash_chain(&seed, iterations);
+        let result: [u8; 32] = hasher.extend_hash_chain(&seed, iterations);
         // Verify by manually applying hash iterations.
         let mut expected: [u8; 32] = seed;
 
         for _ in 0..iterations {
-            expected = digest::hash(&expected);
+            expected = hasher.hash(&expected);
         }
 
         assert_eq!(result, expected, "Hash chain extension produced incorrect result.");
@@ -48,16 +51,17 @@ mod poh_operations {
 
     #[test]
     fn hash_chain_verification() {
+        let hasher: Hasher = Hasher::default();
         let seed: [u8; 32] = [1u8; 32]; // Initial hash.
         let iterations: u64 = DEFAULT_HASHES_PER_REV;
         let event_data: &'static [u8; 10] = b"Test event";
         // Create a valid hash chain with event.
-        let mut current_hash: [u8; 32] = digest::hash_with_data(&seed, event_data);
+        let mut current_hash: [u8; 32] = hasher.embed_data(&seed, event_data);
 
-        current_hash = digest::extend_hash_chain(&current_hash, iterations);
+        current_hash = hasher.extend_hash_chain(&current_hash, iterations);
         // Verify the valid hash chain.
         assert!(
-            digest::verify_hash_chain(&seed, &current_hash, iterations, Some(event_data)),
+            hasher.verify_hash_chain(&seed, &current_hash, iterations, Some(event_data)),
             "Valid hash chain verification failed."
         );
 
@@ -66,7 +70,7 @@ mod poh_operations {
         bad_hash[0] ^= 0xFF; // Corrupt the hash.
 
         assert!(
-            !digest::verify_hash_chain(&seed, &bad_hash, iterations, Some(event_data)),
+            !hasher.verify_hash_chain(&seed, &bad_hash, iterations, Some(event_data)),
             "Corrupted hash chain verification didn't fail."
         );
     }
@@ -78,9 +82,9 @@ mod poh_operations {
 
         let event_data: &'static str = "Test event data";
 
-        let rev1: PoHRecord = poh.next_rev(); // Normal rev.
-        let rev2: PoHRecord = poh.insert_event(event_data.as_bytes()); // Rev with event.
-        let rev3: PoHRecord = poh.next_rev(); // Normal rev.
+        let rev1: Record = poh.next_rev(); // Normal rev.
+        let rev2: Record = poh.insert_event(event_data.as_bytes()); // Rev with event.
+        let rev3: Record = poh.next_rev(); // Normal rev.
 
         // Check that event was stored.
         assert!(rev2.event.is_some());
@@ -89,7 +93,7 @@ mod poh_operations {
         assert!(rev1.event.is_none());
         assert!(rev3.event.is_none());
         // Verify hash chain integrity across all revs.
-        let records: Vec<PoHRecord> = vec![rev1, rev2, rev3];
+        let records: Vec<Record> = vec![rev1, rev2, rev3];
         assert!(PoH::verify_records(&records), "Records with event failed verification.");
     }
 
@@ -98,15 +102,15 @@ mod poh_operations {
         let seed: [u8; 64] = [b'0'; 64];
 
         let mut poh: PoH = PoH::new(&seed);
-        let mut records: Vec<PoHRecord> = Vec::with_capacity((DEFAULT_REVS_PER_PHASE + 5) as usize);
+        let mut records: Vec<Record> = Vec::with_capacity((DEFAULT_REVS_PER_PHASE + 5) as usize);
 
         // Generate revs across a phase boundary.
         for _ in 0..DEFAULT_REVS_PER_PHASE + 5 {
             records.push(poh.next_rev());
         }
 
-        let last_rev: &PoHRecord = &records[DEFAULT_REVS_PER_PHASE as usize - 1];
-        let first_rev: &PoHRecord = &records[DEFAULT_REVS_PER_PHASE as usize];
+        let last_rev: &Record = &records[DEFAULT_REVS_PER_PHASE as usize - 1];
+        let first_rev: &Record = &records[DEFAULT_REVS_PER_PHASE as usize];
 
         // Verify phase transition.
         // Phase indexing starts at 0, so the last rev of phase 0 should be at index DEFAULT_REVS_PER_PHASE-1.
@@ -122,7 +126,7 @@ mod poh_operations {
         let seed: [u8; 64] = [b'0'; 64];
         let mut poh: PoH = PoH::new(&seed);
         let count: usize = 100;
-        let mut records: Vec<PoHRecord> = Vec::with_capacity(count);
+        let mut records: Vec<Record> = Vec::with_capacity(count);
 
         for _ in 0..count {
             records.push(poh.next_rev());
@@ -157,7 +161,7 @@ mod poh_operations {
         let seed: [u8; 64] = [b'0'; 64];
         let mut poh: PoH = PoH::new(&seed);
         let count: usize = 10;
-        let mut records: Vec<PoHRecord> = Vec::with_capacity(count);
+        let mut records: Vec<Record> = Vec::with_capacity(count);
 
         for _ in 0..count {
             records.push(poh.next_rev());
@@ -166,7 +170,7 @@ mod poh_operations {
         // Verify original records are valid.
         assert!(PoH::verify_records(&records), "Valid records failed verification.");
         // Test various corruption scenarios
-        let mut corrupted: Vec<PoHRecord> = records.clone();
+        let mut corrupted: Vec<Record> = records.clone();
         // 1. Corrupt a hash.
         corrupted[5].hash[0] ^= 0xFF;
         assert!(!PoH::verify_records(&corrupted), "Failed to detect hash corruption.");
@@ -186,6 +190,7 @@ mod poh_operations {
 
     #[test]
     fn constant_time_eq() {
+        let hasher: Hasher = Hasher::default();
         // Can't test the actual constant-time property, but can test correctness.
         let hash1: [u8; 32] = [0u8; 32];
         let hash2: [u8; 32] = [0u8; 32];
@@ -196,8 +201,8 @@ mod poh_operations {
         };
 
         // Test the function through verify_hash_chain which uses constant_time_eq.
-        assert!(digest::verify_hash_chain(&hash1, &hash2, 0, None), "Equal hashes not recognized as equal.");
-        assert!(!digest::verify_hash_chain(&hash1, &hash3, 0, None), "Different hashes not recognized as different.");
+        assert!(hasher.verify_hash_chain(&hash1, &hash2, 0, None), "Equal hashes not recognized as equal.");
+        assert!(!hasher.verify_hash_chain(&hash1, &hash3, 0, None), "Different hashes not recognized as different.");
     }
 
     #[test]
@@ -212,15 +217,15 @@ mod poh_operations {
 
         let (tx, rx) = sync_channel(DEFAULT_CHANNEL_CAPACITY);
         let seed_vec: Vec<u8> = seed.to_vec();
-        let manager: Manager = Manager::new("poh-test-thread".to_string(), Config::default()).expect("Failed to create thread manager.");
-        let _: JoinHandle<()> = manager
+        let worker: Native = Native::new("poh-test-thread".to_string(), Config::default()).expect("Failed to create thread worker.");
+        let _: JoinHandle<()> = worker
             .spawn(move || {
                 let mut poh: PoH = PoH::new(&seed_vec);
-                let mut records_batch: Vec<PoHRecord> = Vec::with_capacity(DEFAULT_BATCH_SIZE);
+                let mut records_batch: Vec<Record> = Vec::with_capacity(DEFAULT_BATCH_SIZE);
 
                 for i in 0..test_revs {
                     // Simulate event insertion every 10 revs.
-                    let record: PoHRecord = if i % 10 == 0 {
+                    let record: Record = if i % 10 == 0 {
                         let event_data: String = format!("Event at rev {}.", i);
                         poh.insert_event(event_data.as_bytes())
                     } else {
@@ -245,7 +250,7 @@ mod poh_operations {
             .expect("Failed to spawn PoH thread.");
 
         // Collect and analyze records.
-        let mut records_received: Vec<PoHRecord> = Vec::with_capacity(test_revs as usize);
+        let mut records_received: Vec<Record> = Vec::with_capacity(test_revs as usize);
         let mut last_phase: u64 = 0;
         let mut phase_transitions: i32 = 0;
         let mut counter: u64 = 0;
@@ -298,8 +303,8 @@ mod poh_operations {
         assert!(PoH::verify_records(&records_received), "PoH integrity check failed.");
 
         for i in 1..records_received.len() {
-            let prev: &PoHRecord = &records_received[i - 1];
-            let curr: &PoHRecord = &records_received[i];
+            let prev: &Record = &records_received[i - 1];
+            let curr: &Record = &records_received[i];
 
             assert_eq!(curr.rev_index, prev.rev_index + 1, "Non-sequential rev indices at position {}.", i);
             assert_eq!(
